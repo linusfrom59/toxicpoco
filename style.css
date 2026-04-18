@@ -1,0 +1,86 @@
+import sqlite3
+import random
+import string
+from pathlib import Path
+
+DB_PATH = Path(__file__).resolve().parent / "data.db"
+
+
+def get_connection():
+    return sqlite3.connect(DB_PATH)
+
+
+def init_db():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            discord_name TEXT NOT NULL,
+            discord_user_id TEXT,
+            player_tag TEXT NOT NULL,
+            age INTEGER NOT NULL,
+            rank TEXT NOT NULL,
+            trophies INTEGER NOT NULL,
+            roles TEXT,
+            status TEXT DEFAULT 'pending',
+            link_code TEXT UNIQUE
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def generate_link_code(length=6):
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choice(chars) for _ in range(length))
+
+
+def save_submission(discord_name, player_tag, age, rank, trophies, roles):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    roles_text = ",".join(roles)
+    link_code = generate_link_code()
+
+    cursor.execute("""
+        INSERT INTO submissions (
+            discord_name, player_tag, age, rank, trophies, roles, status, link_code
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (discord_name, player_tag, age, rank, trophies, roles_text, "pending", link_code))
+
+    conn.commit()
+    conn.close()
+
+    return link_code
+
+
+def link_discord_account(link_code, discord_user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE submissions
+        SET discord_user_id = ?, status = 'linked'
+        WHERE link_code = ? AND discord_user_id IS NULL
+    """, (str(discord_user_id), link_code))
+
+    conn.commit()
+    changed = cursor.rowcount
+    conn.close()
+
+    return changed > 0
+
+
+def get_all_submissions():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM submissions")
+    rows = cursor.fetchall()
+
+    conn.close()
+    return rows
